@@ -109,27 +109,6 @@ class NotificationCentre(ctk.CTkFrame):
         )
         self.list_frame.pack(fill="both", expand=True, padx=28, pady=(0, 20))
 
-        demo_frame = ctk.CTkFrame(self, fg_color="transparent")
-        demo_frame.pack(fill="x", padx=28, pady=(0, 18))
-
-        demo_btn = ctk.CTkButton(
-            demo_frame,
-            text="＋  Add Demo Notification",
-            height=36,
-            font=("Consolas", 13),
-            fg_color="#ff5500",
-            hover_color="#cc4400",
-            command=self.add_demo_notification
-        )
-        demo_btn.pack(side="left")
-
-        tip = ctk.CTkLabel(
-            demo_frame,
-            text="Other Rex modules can also push notifications here",
-            font=("Consolas", 12),
-            text_color="#666666"
-        )
-        tip.pack(side="left", padx=15)
 
     def load_notifications(self):
         try:
@@ -138,18 +117,7 @@ class NotificationCentre(ctk.CTkFrame):
                 with open("data/notifications.json", "r", encoding="utf-8") as f:
                     self.notifications = json.load(f)
             else:
-                self.notifications = [
-                    self._create_notif(
-                        "Welcome to Rex",
-                        "Your central notification hub is ready.",
-                        "System"
-                    ),
-                    self._create_notif(
-                        "Git Master Connected",
-                        "You can now receive Git related alerts here.",
-                        "Git"
-                    ),
-                ]
+                self.notifications = []
                 self.save_notifications()
         except Exception:
             self.notifications = []
@@ -351,16 +319,3 @@ class NotificationCentre(ctk.CTkFrame):
         self.notifications.clear()
         self.save_notifications()
         self.refresh_list()
-
-    def add_demo_notification(self):
-        import random
-        samples = [
-            ("New commit pushed", "main branch received a new commit", "Git"),
-            ("Chrome notification", "You have 3 new emails", "Browser"),
-            ("Meeting reminder", "Team standup starts in 15 minutes", "Calendar"),
-            ("Workspace updated", "Project files were synchronized", "Workspace"),
-            ("System alert", "Rex is running low on memory", "Alert"),
-            ("Clipboard saved", "Important code snippet was stored", "System"),
-        ]
-        title, message, type_ = random.choice(samples)
-        NotificationCentre.push(title, message, type_)
