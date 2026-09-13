@@ -149,6 +149,13 @@ class GitMaster(ctk.CTkFrame):
         )
         self.status_btn.pack(side="left", padx=5)
 
+        self.command_toggle_btn = ctk.CTkButton(
+            actions, text="Command", width=100, font=("Consolas", 13),
+            fg_color="#222222", hover_color="#333333",
+            command=self.toggle_command_view
+        )
+        self.command_toggle_btn.pack(side="left", padx=(15, 5))
+
         # ------------------------- Main area -------------------------
         main_area = ctk.CTkFrame(self, fg_color="transparent")
         main_area.pack(fill="both", expand=True, padx=25, pady=(5, 5))
@@ -169,18 +176,21 @@ class GitMaster(ctk.CTkFrame):
         )
         output_frame.pack(fill="x", padx=25, pady=(5, 20))
 
-        ctk.CTkLabel(
+        self.command_title = ctk.CTkLabel(
             output_frame, text="Git command",
             font=("Consolas", 14, "bold"), text_color="#ff5500"
-        ).pack(anchor="w", padx=15, pady=(12, 5))
+        )
+        self.command_title.pack(anchor="w", padx=15, pady=(12, 5))
+        self.command_title.pack_forget()
 
-        cmd_row = ctk.CTkFrame(output_frame, fg_color="transparent")
-        cmd_row.pack(fill="x", padx=15, pady=(0, 10))
+        self.cmd_row = ctk.CTkFrame(output_frame, fg_color="transparent")
+        self.cmd_row.pack(fill="x", padx=15, pady=(0, 10))
+        self.cmd_row.pack_forget()
 
-        ctk.CTkLabel(cmd_row, text="git", font=("Consolas", 13, "bold"), text_color="#ff5500").pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(self.cmd_row, text="git", font=("Consolas", 13, "bold"), text_color="#ff5500").pack(side="left", padx=(0, 6))
 
         self.cmd_entry = ctk.CTkEntry(
-            cmd_row,
+            self.cmd_row,
             placeholder_text="status  |  log --oneline -5  |  branch -a  |  any other command…",
             font=("Consolas", 13), height=44
         )
@@ -188,23 +198,24 @@ class GitMaster(ctk.CTkFrame):
         self.cmd_entry.bind("<Return>", lambda e: self.run_custom_command())
 
         self.run_btn = ctk.CTkButton(
-            cmd_row, text="Run", width=80, font=("Consolas", 13, "bold"),
+            self.cmd_row, text="Run", width=80, font=("Consolas", 13, "bold"),
             fg_color="#ff5500", hover_color="#cc4400",
             command=self.run_custom_command
         )
         self.run_btn.pack(side="left")
 
         clear_btn = ctk.CTkButton(
-            cmd_row, text="Clear", width=70, font=("Consolas", 13),
+            self.cmd_row, text="Clear", width=70, font=("Consolas", 13),
             fg_color="#222222", hover_color="#333333",
             command=self.clear_output
         )
         clear_btn.pack(side="left", padx=(8, 0))
 
-        ctk.CTkLabel(
+        self.output_title = ctk.CTkLabel(
             output_frame, text="Command output",
             font=("Consolas", 12, "bold"), text_color="#777777"
-        ).pack(anchor="w", padx=15, pady=(2, 5))
+        )
+        self.output_title.pack(anchor="w", padx=15, pady=(12, 5))
 
         self.output_box = ctk.CTkTextbox(
             output_frame, height=160, font=("Consolas", 12),
@@ -214,6 +225,23 @@ class GitMaster(ctk.CTkFrame):
         self.output_box.insert("1.0", "Select a repository and run commands…\n")
         self.output_box.configure(state="disabled")
         self.output_box.bind("<MouseWheel>", lambda e: self.output_box.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        self.command_visible = False
+
+    def toggle_command_view(self):
+        self.command_visible = not self.command_visible
+        if self.command_visible:
+            self.output_box.pack_forget()
+            self.output_title.pack_forget()
+            self.command_title.pack(anchor="w", padx=15, pady=(12, 5))
+            self.cmd_row.pack(fill="x", padx=15, pady=(0, 12))
+            self.command_toggle_btn.configure(text="Show Output", fg_color="#ff5500", hover_color="#cc4400")
+            self.cmd_entry.focus_set()
+        else:
+            self.cmd_row.pack_forget()
+            self.command_title.pack_forget()
+            self.output_title.pack(anchor="w", padx=15, pady=(12, 5))
+            self.output_box.pack(fill="x", padx=15, pady=(0, 12))
+            self.command_toggle_btn.configure(text="Command", fg_color="#222222", hover_color="#333333")
 
     # =========================================================
     # Repository
@@ -486,12 +514,46 @@ class GitMaster(ctk.CTkFrame):
         self.output_box.see("end")
         self.output_box.configure(state="disabled")
         self.output_box.bind("<MouseWheel>", lambda e: self.output_box.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        self.command_visible = False
+
+    def toggle_command_view(self):
+        self.command_visible = not self.command_visible
+        if self.command_visible:
+            self.output_box.pack_forget()
+            self.output_title.pack_forget()
+            self.command_title.pack(anchor="w", padx=15, pady=(12, 5))
+            self.cmd_row.pack(fill="x", padx=15, pady=(0, 12))
+            self.command_toggle_btn.configure(text="Show Output", fg_color="#ff5500", hover_color="#cc4400")
+            self.cmd_entry.focus_set()
+        else:
+            self.cmd_row.pack_forget()
+            self.command_title.pack_forget()
+            self.output_title.pack(anchor="w", padx=15, pady=(12, 5))
+            self.output_box.pack(fill="x", padx=15, pady=(0, 12))
+            self.command_toggle_btn.configure(text="Command", fg_color="#222222", hover_color="#333333")
 
     def clear_output(self):
         self.output_box.configure(state="normal")
         self.output_box.delete("1.0", "end")
         self.output_box.configure(state="disabled")
         self.output_box.bind("<MouseWheel>", lambda e: self.output_box.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        self.command_visible = False
+
+    def toggle_command_view(self):
+        self.command_visible = not self.command_visible
+        if self.command_visible:
+            self.output_box.pack_forget()
+            self.output_title.pack_forget()
+            self.command_title.pack(anchor="w", padx=15, pady=(12, 5))
+            self.cmd_row.pack(fill="x", padx=15, pady=(0, 12))
+            self.command_toggle_btn.configure(text="Show Output", fg_color="#ff5500", hover_color="#cc4400")
+            self.cmd_entry.focus_set()
+        else:
+            self.cmd_row.pack_forget()
+            self.command_title.pack_forget()
+            self.output_title.pack(anchor="w", padx=15, pady=(12, 5))
+            self.output_box.pack(fill="x", padx=15, pady=(0, 12))
+            self.command_toggle_btn.configure(text="Command", fg_color="#222222", hover_color="#333333")
 
     def select_commit(self, commit):
         self.details.show_commit(commit, self.current_repo)
