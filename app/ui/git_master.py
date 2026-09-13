@@ -170,20 +170,12 @@ class GitMaster(ctk.CTkFrame):
         output_frame.pack(fill="x", padx=25, pady=(5, 20))
 
         ctk.CTkLabel(
-            output_frame, text="Command Output",
+            output_frame, text="Git command",
             font=("Consolas", 14, "bold"), text_color="#ff5500"
         ).pack(anchor="w", padx=15, pady=(12, 5))
 
-        self.output_box = ctk.CTkTextbox(
-            output_frame, height=170, font=("Consolas", 12),
-            fg_color="#0d0d0d", text_color="#dddddd", wrap="word"
-        )
-        self.output_box.pack(fill="x", padx=15, pady=(0, 10))
-        self.output_box.insert("1.0", "Select a repository and run commands…\n")
-        self.output_box.configure(state="disabled")
-
         cmd_row = ctk.CTkFrame(output_frame, fg_color="transparent")
-        cmd_row.pack(fill="x", padx=15, pady=(0, 12))
+        cmd_row.pack(fill="x", padx=15, pady=(0, 10))
 
         ctk.CTkLabel(cmd_row, text="git", font=("Consolas", 13, "bold"), text_color="#ff5500").pack(side="left", padx=(0, 6))
 
@@ -208,6 +200,19 @@ class GitMaster(ctk.CTkFrame):
             command=self.clear_output
         )
         clear_btn.pack(side="left", padx=(8, 0))
+
+        ctk.CTkLabel(
+            output_frame, text="Command output",
+            font=("Consolas", 12, "bold"), text_color="#777777"
+        ).pack(anchor="w", padx=15, pady=(2, 5))
+
+        self.output_box = ctk.CTkTextbox(
+            output_frame, height=110, font=("Consolas", 12),
+            fg_color="#0d0d0d", text_color="#dddddd", wrap="word"
+        )
+        self.output_box.pack(fill="x", padx=15, pady=(0, 12))
+        self.output_box.insert("1.0", "Select a repository and run commands…\n")
+        self.output_box.configure(state="disabled")
 
     # =========================================================
     # Repository
