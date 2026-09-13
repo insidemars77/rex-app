@@ -6,7 +6,6 @@ import customtkinter as ctk
 from ui.git_master import GitMaster
 from ui.clipboard_manager import ClipboardManager
 from ui.notification_centre import NotificationCentre
-from ui.quick_app_group import QuickAppGroup
 from ui.quick_app_group_2 import QuickAppGroup2
 
 
@@ -88,11 +87,15 @@ class MainWindow(ctk.CTkToplevel):
         #clipboard manager
         clipboard_manager = ClipboardManager(self.content)
         self.pages["Clipboard Manager"] = clipboard_manager
-
-        self.pages["Notification Centre"] = NotificationCentre(self.content)
-        self.pages["Quick App Group"] = QuickAppGroup(self.content)
-        self.pages["Quick App Groups"] = QuickAppGroup2(self.content)
-
+        
+        #notification centre
+        notification_centre = NotificationCentre(self.content)
+        self.pages["Notification Centre"] = notification_centre
+        
+        #quick app group 2
+        quick_app_group_2 = QuickAppGroup2(self.content)
+        self.pages["Quick App Groups"] = quick_app_group_2
+    
         # Dashboard Page
         dashboard = ctk.CTkFrame(self.content, fg_color="#0d0d0d")
         ctk.CTkLabel(dashboard, text="Dashboard", font=("Consolas", 28, "bold")).pack(pady=40)
@@ -154,7 +157,7 @@ class SidePanel(ctk.CTkFrame):
         logo.pack(pady=(25, 20))
 
         # Navigation buttons
-        buttons = ["Git Master","Clipboard Manager","Quick App Group","Quick App Groups","Notification Centre""Dashboard", "Workflows", "Agents", "Settings"]
+        buttons = ["Git Master","Clipboard Manager","Quick App Groups","Notification Centre","Dashboard", "Workflows", "Agents", "Settings"]
 
         for item in buttons:
             btn = ctk.CTkButton(

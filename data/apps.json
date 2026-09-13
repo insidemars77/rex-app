@@ -1,0 +1,37 @@
+[
+    {
+        "name": "VS Code",
+        "path": "code",
+        "icon": "\ud83d\udcbb"
+    },
+    {
+        "name": "Chrome",
+        "path": "chrome",
+        "icon": "\ud83c\udf10"
+    },
+    {
+        "name": "Terminal",
+        "path": "wt",
+        "icon": "\u2b1b"
+    },
+    {
+        "name": "File Explorer",
+        "path": "explorer",
+        "icon": "\ud83d\udcc1"
+    },
+    {
+        "name": "Notepad",
+        "path": "notepad",
+        "icon": "\ud83d\udcdd"
+    },
+    {
+        "name": "Calculator",
+        "path": "calc",
+        "icon": "\ud83e\uddee"
+    },
+    {
+        "name": "uTorrent",
+        "path": "C:/Users/User/AppData/Roaming/utorrent/uTorrent.exe",
+        "icon": "\ud83d\udce6"
+    }
+]
