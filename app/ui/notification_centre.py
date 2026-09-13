@@ -32,6 +32,13 @@ class NotificationCentre(ctk.CTkFrame):
         )
         title.pack(side="left")
 
+        ctk.CTkLabel(
+            header,
+            text="Stay on top of what Rex is doing",
+            font=("Consolas", 12),
+            text_color="#777777"
+        ).pack(side="left", padx=(16, 0), pady=(7, 0))
+
         btn_frame = ctk.CTkFrame(header, fg_color="transparent")
         btn_frame.pack(side="right")
 
@@ -96,7 +103,9 @@ class NotificationCentre(ctk.CTkFrame):
         self.list_frame = ctk.CTkScrollableFrame(
             self,
             fg_color="#141414",
-            corner_radius=12
+            corner_radius=14,
+            border_width=1,
+            border_color="#252525"
         )
         self.list_frame.pack(fill="both", expand=True, padx=28, pady=(0, 20))
 

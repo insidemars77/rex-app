@@ -85,6 +85,13 @@ class ClipboardManager(ctk.CTkFrame):
 
         title.pack(side="left")
 
+        ctk.CTkLabel(
+            header,
+            text="Your recent copied items, always within reach",
+            font=("Consolas", 12),
+            text_color="#777777"
+        ).pack(side="left", padx=(16, 0), pady=(8, 0))
+
         clear_button = ctk.CTkButton(
             header,
             text="Clear",
@@ -262,9 +269,20 @@ class ClipboardManager(ctk.CTkFrame):
         item = ctk.CTkFrame(
             self.list_frame,
             fg_color="#1d1d1d",
-            corner_radius=8
+            corner_radius=10,
+            border_width=1,
+            border_color="#292929"
         )
         item.pack(fill="x", padx=5, pady=5)
+
+        def on_enter(_event):
+            item.configure(fg_color="#252525", border_color="#ff5500")
+
+        def on_leave(_event):
+            item.configure(fg_color="#1d1d1d", border_color="#292929")
+
+        item.bind("<Enter>", on_enter)
+        item.bind("<Leave>", on_leave)
 
         # Number
         number = ctk.CTkLabel(
@@ -291,7 +309,8 @@ class ClipboardManager(ctk.CTkFrame):
             font=("Consolas", 13),
             anchor="nw",
             justify="left",
-            wraplength=550
+            wraplength=600,
+            text_color="#dddddd"
         )
         text_label.pack(fill="both", expand=True)
 

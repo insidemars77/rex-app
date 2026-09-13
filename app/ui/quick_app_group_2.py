@@ -79,6 +79,14 @@ class QuickAppGroup2(ctk.CTkFrame):
         )
         title.pack(side="left")
 
+        self.group_summary = ctk.CTkLabel(
+            header,
+            text="",
+            font=("Consolas", 12),
+            text_color="#777777"
+        )
+        self.group_summary.pack(side="left", padx=(16, 0), pady=(7, 0))
+
         # ========== Main Layout ==========
         main_layout = ctk.CTkFrame(self, fg_color="transparent")
         main_layout.pack(fill="both", expand=True, padx=25, pady=(5, 20))
@@ -100,6 +108,13 @@ class QuickAppGroup2(ctk.CTkFrame):
             text_color="#ff5500"
         )
         sidebar_title.pack(pady=(15, 10))
+
+        ctk.CTkLabel(
+            self.sidebar,
+            text="Choose a collection",
+            font=("Consolas", 10),
+            text_color="#666666"
+        ).pack(pady=(0, 12))
 
         self.folder_buttons = {}
 
@@ -147,6 +162,9 @@ class QuickAppGroup2(ctk.CTkFrame):
             widget.destroy()
 
         apps = self.groups.get(group_name, [])
+        self.group_summary.configure(
+            text=f"{len(apps)} app{'s' if len(apps) != 1 else ''} in {group_name}"
+        )
 
         if not apps:
             empty = ctk.CTkLabel(
@@ -173,8 +191,8 @@ class QuickAppGroup2(ctk.CTkFrame):
             self.apps_container,
             fg_color="#1c1c1c",
             corner_radius=14,
-            width=170,
-            height=120,
+            width=180,
+            height=132,
             border_width=1,
             border_color="#2a2a2a"
         )

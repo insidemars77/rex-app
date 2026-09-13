@@ -33,6 +33,13 @@ class GitMaster(ctk.CTkFrame):
         )
         title.pack(side="left")
 
+        ctk.CTkLabel(
+            header,
+            text="A focused control room for your repositories",
+            font=("Consolas", 12),
+            text_color="#777777"
+        ).pack(side="left", padx=(16, 0), pady=(8, 0))
+
         refresh_button = ctk.CTkButton(
             header, text="⟳ Refresh", width=100,
             font=("Consolas", 13),
@@ -50,7 +57,13 @@ class GitMaster(ctk.CTkFrame):
         add_button.pack(side="right")
 
         # ------------------------- Repo bar -------------------------
-        repo_bar = ctk.CTkFrame(self, fg_color="#161616", corner_radius=10)
+        repo_bar = ctk.CTkFrame(
+            self,
+            fg_color="#161616",
+            corner_radius=12,
+            border_width=1,
+            border_color="#292929"
+        )
         repo_bar.pack(fill="x", padx=25, pady=10)
 
         self.repo_label = ctk.CTkLabel(
@@ -66,7 +79,13 @@ class GitMaster(ctk.CTkFrame):
         self.branch_label.pack(side="right", padx=15)
 
         # ------------------------- Actions bar -------------------------
-        actions = ctk.CTkFrame(self, fg_color="#161616", corner_radius=10)
+        actions = ctk.CTkFrame(
+            self,
+            fg_color="#161616",
+            corner_radius=12,
+            border_width=1,
+            border_color="#292929"
+        )
         actions.pack(fill="x", padx=25, pady=(0, 10))
 
         # Branch selector
@@ -140,7 +159,13 @@ class GitMaster(ctk.CTkFrame):
         self.details.pack(side="right", fill="y", padx=(15, 0))
 
         # ------------------------- Output + Command section -------------------------
-        output_frame = ctk.CTkFrame(self, fg_color="#161616", corner_radius=10)
+        output_frame = ctk.CTkFrame(
+            self,
+            fg_color="#161616",
+            corner_radius=12,
+            border_width=1,
+            border_color="#292929"
+        )
         output_frame.pack(fill="x", padx=25, pady=(5, 20))
 
         ctk.CTkLabel(
