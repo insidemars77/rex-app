@@ -175,7 +175,7 @@ class GitMaster(ctk.CTkFrame):
         ).pack(anchor="w", padx=15, pady=(12, 5))
 
         self.output_box = ctk.CTkTextbox(
-            output_frame, height=140, font=("Consolas", 12),
+            output_frame, height=170, font=("Consolas", 12),
             fg_color="#0d0d0d", text_color="#dddddd", wrap="word"
         )
         self.output_box.pack(fill="x", padx=15, pady=(0, 10))
@@ -190,7 +190,7 @@ class GitMaster(ctk.CTkFrame):
         self.cmd_entry = ctk.CTkEntry(
             cmd_row,
             placeholder_text="status  |  log --oneline -5  |  branch -a  |  any other command…",
-            font=("Consolas", 13), height=36
+            font=("Consolas", 13), height=44
         )
         self.cmd_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.cmd_entry.bind("<Return>", lambda e: self.run_custom_command())
@@ -505,13 +505,21 @@ class GitGraph(ctk.CTkFrame):
         self.select_commit = select_commit
 
         self.canvas = ctk.CTkCanvas(self, background="#101010", highlightthickness=0)
-        self.scrollbar = ctk.CTkScrollbar(self, orientation="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.vertical_scrollbar = ctk.CTkScrollbar(self, orientation="vertical", command=self.canvas.yview)
+        self.horizontal_scrollbar = ctk.CTkScrollbar(self, orientation="horizontal", command=self.canvas.xview)
+        self.canvas.configure(
+            yscrollcommand=self.vertical_scrollbar.set,
+            xscrollcommand=self.horizontal_scrollbar.set
+        )
 
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.vertical_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.horizontal_scrollbar.grid(row=1, column=0, sticky="ew")
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
         self.canvas.bind("<MouseWheel>", self.on_scroll)
+        self.canvas.bind("<Shift-MouseWheel>", self.on_horizontal_scroll)
         self.canvas.bind("<Button-4>", lambda e: self.canvas.yview_scroll(-1, "units"))
         self.canvas.bind("<Button-5>", lambda e: self.canvas.yview_scroll(1, "units"))
 
@@ -622,6 +630,9 @@ class GitGraph(ctk.CTkFrame):
 
     def on_scroll(self, event):
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def on_horizontal_scroll(self, event):
+        self.canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
 
 
 # =============================================================
