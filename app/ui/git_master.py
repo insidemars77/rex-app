@@ -207,12 +207,13 @@ class GitMaster(ctk.CTkFrame):
         ).pack(anchor="w", padx=15, pady=(2, 5))
 
         self.output_box = ctk.CTkTextbox(
-            output_frame, height=110, font=("Consolas", 12),
+            output_frame, height=160, font=("Consolas", 12),
             fg_color="#0d0d0d", text_color="#dddddd", wrap="word"
         )
         self.output_box.pack(fill="x", padx=15, pady=(0, 12))
         self.output_box.insert("1.0", "Select a repository and run commands…\n")
         self.output_box.configure(state="disabled")
+        self.output_box.bind("<MouseWheel>", lambda e: self.output_box.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
     # =========================================================
     # Repository
@@ -484,11 +485,13 @@ class GitMaster(ctk.CTkFrame):
         self.output_box.insert("end", text)
         self.output_box.see("end")
         self.output_box.configure(state="disabled")
+        self.output_box.bind("<MouseWheel>", lambda e: self.output_box.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
     def clear_output(self):
         self.output_box.configure(state="normal")
         self.output_box.delete("1.0", "end")
         self.output_box.configure(state="disabled")
+        self.output_box.bind("<MouseWheel>", lambda e: self.output_box.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
     def select_commit(self, commit):
         self.details.show_commit(commit, self.current_repo)
