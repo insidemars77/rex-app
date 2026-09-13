@@ -3,6 +3,7 @@ from tkinter import filedialog, messagebox, simpledialog
 import subprocess
 import os
 import threading
+import textwrap
 
 
 class GitMaster(ctk.CTkFrame):
@@ -586,12 +587,16 @@ class GitGraph(ctk.CTkFrame):
         self.canvas.create_oval(node_x - 6, node_y - 6, node_x + 6, node_y + 6,
                                 fill="#ff5500", outline="")
 
-        self.canvas.create_text(x + 18, y + 16, text=commit["short"],
+        text_x = x + 18
+        message = self.fit_commit_text(commit["message"], 38)
+        author = self.fit_commit_text(commit["author"], 22)
+
+        self.canvas.create_text(text_x, y + 16, text=commit["short"],
                                 anchor="w", fill="#ff5500", font=("Consolas", 11, "bold"))
-        self.canvas.create_text(x + 18, y + 38, text=commit["message"][:40],
+        self.canvas.create_text(text_x, y + 38, text=message,
                                 anchor="w", fill="#ffffff", font=("Consolas", 12, "bold"))
-        self.canvas.create_text(x + 18, y + 58,
-                                text=f'{commit["author"]} • {commit["date"][:16]}',
+        self.canvas.create_text(text_x, y + 58,
+                                text=f'{author} • {commit["date"][:16]}',
                                 anchor="w", fill="#777777", font=("Consolas", 10))
 
         self.canvas.tag_bind(rect, "<Button-1>",
@@ -600,6 +605,20 @@ class GitGraph(ctk.CTkFrame):
                              lambda e, r=rect: self.canvas.itemconfigure(r, outline="#ff5500"))
         self.canvas.tag_bind(rect, "<Leave>",
                              lambda e, r=rect: self.canvas.itemconfigure(r, outline="#333333"))
+
+    @staticmethod
+    def fit_commit_text(value, max_chars):
+        lines = textwrap.wrap(
+            str(value),
+            width=max_chars,
+            break_long_words=True,
+            break_on_hyphens=False
+        )
+        if not lines:
+            return ""
+        if len(lines) > 1:
+            return lines[0][:max_chars - 3].rstrip() + "..."
+        return lines[0]
 
     def on_scroll(self, event):
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
