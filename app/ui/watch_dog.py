@@ -1,23 +1,24 @@
 """
 Watch Dog — local screen-time tracker for Rex.
 
-Tracks how long the active window on this PC belongs to each app. For
-browsers, it also records which site was active (best-effort, from the
-window title) and nests that under the browser's row — click a browser
-row to expand/collapse its site breakdown.
+Tracks how long the active window on this PC belongs to each app. Click
+any app row to drag it open and see:
+  - for browsers: time spent per site (with a bar), and
+  - for every app: the actual open/close time ranges for today
+    (e.g. "12:47 PM – 12:51 PM"), including the session in progress
+    right now if that app is currently active.
 
 Windows only. Requires:
     pip install pywin32 psutil
 
 Notes / limitations:
-- Site detection reads the browser's window title text (e.g. "Inbox -
-  Gmail - Google Chrome"), not the actual URL or open-tab list. It can
-  only "see" whichever tab was frontmost at a given moment, accumulated
-  over the day — not a live list of every tab currently open.
-- Idle time (no keyboard/mouse input for 60s) is not counted.
+- Site detection reads the browser's window title text, not the actual
+  URL or open-tab list — it can only "see" whichever tab was frontmost
+  at a given moment, accumulated over the day.
+- Idle time (no keyboard/mouse input for 60s) is not counted, and ends
+  whatever session was in progress.
 - Daily totals are saved to watchdog_history.json so the weekly chart
-  and "vs yesterday" comparison keep working across restarts. The first
-  day you use this feature, "vs yesterday" has nothing to compare to.
+  and "vs yesterday" comparison survive restarts.
 """
 
 import customtkinter as ctk
@@ -50,8 +51,11 @@ HISTORY_KEEP_DAYS = 30
 
 POLL_INTERVAL_MS = 1000        # how often we sample the active window
 REORDER_EVERY_N_TICKS = 6      # re-sort the visible rows only this often
-SAVE_EVERY_N_TICKS = 5         # write to disk / refresh summary card
+SAVE_EVERY_N_TICKS = 5         # write to disk / refresh summary + expanded panels
 IDLE_THRESHOLD_SECONDS = 60    # stop counting after this long with no input
+
+MIN_SESSION_SECONDS = 3        # ignore sub-3-second focus flickers
+MAX_SESSIONS_PER_APP = 100     # cap stored session history per app, per day
 
 BROWSER_PROCESSES = {
     "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe"
@@ -145,6 +149,10 @@ def format_duration(seconds):
     return f"{secs}s" if secs else "0s"
 
 
+def format_clock(dt):
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+
 # =========================================================
 # Watch Dog page
 # =========================================================
@@ -159,7 +167,7 @@ class WatchDog(ctk.CTkFrame):
         )
 
         self.today = self.today_str()
-        self.entries = {}       # process_key -> {"display","kind","seconds","sites":{site:seconds}}
+        self.entries = {}       # process_key -> {"display","kind","seconds","sites","sessions"}
         self.history = {}       # date_str -> {"total_seconds","app_seconds","web_seconds"}
         self.row_widgets = {}   # process_key -> widget refs, so updates don't rebuild the list
         self.expanded = set()   # process_keys currently expanded
@@ -167,6 +175,9 @@ class WatchDog(ctk.CTkFrame):
         self.tracking = True
         self.tick_count = 0
         self.empty_label = None
+
+        self.active_key = None      # process_key currently in the foreground
+        self.active_since = None    # datetime it became the foreground window
 
         self.load_data()
         self.history = self.load_history()
@@ -185,7 +196,6 @@ class WatchDog(ctk.CTkFrame):
 
     def build_ui(self):
 
-        # Header
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=30, pady=(25, 5))
 
@@ -204,7 +214,6 @@ class WatchDog(ctk.CTkFrame):
             fg_color="#222222", hover_color="#333333", command=self.reset_today
         ).pack(side="right")
 
-        # Subheader
         sub = ctk.CTkFrame(self, fg_color="transparent")
         sub.pack(fill="x", padx=30, pady=(0, 10))
 
@@ -218,7 +227,6 @@ class WatchDog(ctk.CTkFrame):
         )
         self.status_label.pack(side="right")
 
-        # Quick total banner
         totals_card = ctk.CTkFrame(self, fg_color="#161616", corner_radius=10)
         totals_card.pack(fill="x", padx=30, pady=(0, 15))
 
@@ -232,7 +240,6 @@ class WatchDog(ctk.CTkFrame):
         )
         self.total_label.pack(anchor="w", padx=20, pady=(0, 15))
 
-        # App / website breakdown — fixed height so the summary card below is always visible
         self.list_frame = ctk.CTkScrollableFrame(
             self, fg_color="#161616", corner_radius=10, height=230
         )
@@ -240,7 +247,6 @@ class WatchDog(ctk.CTkFrame):
 
         self.render_rows()
 
-        # Screen-time summary card (weekly chart + vs. yesterday)
         self.build_summary_card()
 
     def show_dependency_warning(self):
@@ -257,8 +263,6 @@ class WatchDog(ctk.CTkFrame):
         self.status_label.configure(text="● Not tracking", text_color="#666666")
 
     def build_summary_card(self):
-        # Styled a little differently from the rest of the app on purpose —
-        # this is meant to read as a distinct "widget", like phone screen time.
         card = ctk.CTkFrame(
             self, fg_color="#141414", corner_radius=18,
             border_width=1, border_color="#2a2a2a"
@@ -290,13 +294,12 @@ class WatchDog(ctk.CTkFrame):
         )
         self.summary_change_label.pack(side="left", padx=(12, 0), pady=(10, 0))
 
-        # Weekly bar chart
+        # Weekly bar chart — proper axes now (hours on Y, day names on X)
         self.chart_canvas = tk.Canvas(
-            card, width=480, height=130, bg="#141414", highlightthickness=0
+            card, width=490, height=160, bg="#141414", highlightthickness=0
         )
         self.chart_canvas.pack(fill="x", padx=22, pady=(14, 4))
 
-        # Apps vs Web breakdown
         self.category_frame = ctk.CTkFrame(card, fg_color="transparent")
         self.category_frame.pack(fill="x", padx=22, pady=(10, 4))
 
@@ -340,9 +343,11 @@ class WatchDog(ctk.CTkFrame):
         if not self.winfo_exists():
             return
 
+        now = datetime.now()
         today_now = self.today_str()
+
         if today_now != self.today:
-            # Finalize the day that just ended before resetting
+            self._end_active_session(now)
             self.commit_today_to_history()
             self.save_history()
             self.today = today_now
@@ -350,20 +355,25 @@ class WatchDog(ctk.CTkFrame):
             self.clear_all_rows()
             self.save_data()
 
-        if self.tracking:
-            idle = get_idle_seconds()
+        if self.tracking and get_idle_seconds() < IDLE_THRESHOLD_SECONDS:
+            key, display, kind, site = get_active_window_info()
 
-            if idle < IDLE_THRESHOLD_SECONDS:
-                key, display, kind, site = get_active_window_info()
+            if key:
+                if key != self.active_key:
+                    self._end_active_session(now)
+                    self.active_key = key
+                    self.active_since = now
 
-                if key:
-                    entry = self.entries.setdefault(
-                        key, {"display": display, "kind": kind, "seconds": 0, "sites": {}}
-                    )
-                    entry["seconds"] += POLL_INTERVAL_MS / 1000
-
-                    if site:
-                        entry["sites"][site] = entry["sites"].get(site, 0) + POLL_INTERVAL_MS / 1000
+                entry = self.entries.setdefault(
+                    key, {"display": display, "kind": kind, "seconds": 0, "sites": {}, "sessions": []}
+                )
+                entry["seconds"] += POLL_INTERVAL_MS / 1000
+                if site:
+                    entry["sites"][site] = entry["sites"].get(site, 0) + POLL_INTERVAL_MS / 1000
+            else:
+                self._end_active_session(now)
+        else:
+            self._end_active_session(now)
 
         self.tick_count += 1
         self.render_rows()
@@ -372,8 +382,27 @@ class WatchDog(ctk.CTkFrame):
             self.save_data()
             self.save_history()
             self.refresh_summary()
+            for key in list(self.expanded):
+                if key in self.entries:
+                    self.render_expanded_details(key, self.entries[key])
 
         self.after(POLL_INTERVAL_MS, self.tick)
+
+    def _end_active_session(self, now):
+        if self.active_key is None or self.active_since is None:
+            return
+
+        duration = (now - self.active_since).total_seconds()
+        if duration >= MIN_SESSION_SECONDS:
+            entry = self.entries.get(self.active_key)
+            if entry is not None:
+                sessions = entry.setdefault("sessions", [])
+                sessions.append({"start": self.active_since.isoformat(), "end": now.isoformat()})
+                if len(sessions) > MAX_SESSIONS_PER_APP:
+                    del sessions[: len(sessions) - MAX_SESSIONS_PER_APP]
+
+        self.active_key = None
+        self.active_since = None
 
     def toggle_tracking(self):
         self.tracking = not self.tracking
@@ -382,10 +411,13 @@ class WatchDog(ctk.CTkFrame):
             self.pause_button.configure(text="⏸ Pause")
             self.status_label.configure(text="● Tracking", text_color="#ff5500")
         else:
+            self._end_active_session(datetime.now())
             self.pause_button.configure(text="▶ Resume")
             self.status_label.configure(text="● Paused", text_color="#666666")
 
     def reset_today(self):
+        self.active_key = None
+        self.active_since = None
         self.entries = {}
         self.save_data()
         self.clear_all_rows()
@@ -409,7 +441,7 @@ class WatchDog(ctk.CTkFrame):
 
             if data.get("date") == self.today:
                 entries = data.get("entries", {})
-                valid = all("sites" in e and "kind" in e for e in entries.values())
+                valid = all("sites" in e and "kind" in e and "sessions" in e for e in entries.values())
                 self.entries = entries if valid else {}
 
         except (json.JSONDecodeError, OSError):
@@ -497,7 +529,6 @@ class WatchDog(ctk.CTkFrame):
                 self.create_row(key, entry)
             self.update_row(key, entry, max_seconds)
 
-        # Only reshuffle row order occasionally, so the list doesn't jump every second
         if not self._order:
             self._order = sorted_keys
         elif sorted_keys != self._order and self.tick_count % REORDER_EVERY_N_TICKS == 0:
@@ -510,6 +541,7 @@ class WatchDog(ctk.CTkFrame):
     def create_row(self, key, entry):
         frame = ctk.CTkFrame(self.list_frame, fg_color="#1d1d1d", corner_radius=8)
         frame.pack(fill="x", padx=5, pady=5)
+        frame.configure(cursor="hand2")
 
         top_line = ctk.CTkFrame(frame, fg_color="transparent")
         top_line.pack(fill="x")
@@ -519,12 +551,10 @@ class WatchDog(ctk.CTkFrame):
             top_line, text=icon, font=("Consolas", 16), width=30
         ).pack(side="left", padx=(12, 2), pady=12)
 
-        arrow_label = None
-        if entry["kind"] == "browser":
-            arrow_label = ctk.CTkLabel(
-                top_line, text="▸", font=("Consolas", 12), text_color="#666666", width=16
-            )
-            arrow_label.pack(side="left")
+        arrow_label = ctk.CTkLabel(
+            top_line, text="▸", font=("Consolas", 12), text_color="#666666", width=16
+        )
+        arrow_label.pack(side="left")
 
         name_label = ctk.CTkLabel(
             top_line, text=entry["display"], font=("Consolas", 13, "bold"), anchor="w", width=150
@@ -540,8 +570,8 @@ class WatchDog(ctk.CTkFrame):
         )
         time_label.pack(side="right", padx=(10, 15), pady=12)
 
-        # Nested site breakdown — created now, only packed (shown) when expanded
-        sites_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        # Expanded panel — created now, only packed (shown) once the row is clicked
+        details_frame = ctk.CTkFrame(frame, fg_color="transparent")
 
         self.row_widgets[key] = {
             "frame": frame,
@@ -550,12 +580,10 @@ class WatchDog(ctk.CTkFrame):
             "bar": bar,
             "time_label": time_label,
             "arrow_label": arrow_label,
-            "sites_frame": sites_frame,
+            "details_frame": details_frame,
         }
 
-        if entry["kind"] == "browser":
-            frame.configure(cursor="hand2")
-            self._bind_toggle(top_line, key)
+        self._bind_toggle(top_line, key)
 
     def _bind_toggle(self, widget, key):
         widget.bind("<Button-1>", lambda e: self.toggle_expand(key))
@@ -567,50 +595,92 @@ class WatchDog(ctk.CTkFrame):
         widgets["bar"].set(entry["seconds"] / max_seconds)
         widgets["time_label"].configure(text=format_duration(entry["seconds"]))
 
-        if key in self.expanded:
-            self.render_sites(key, entry)
-
     def toggle_expand(self, key):
         widgets = self.row_widgets[key]
 
         if key in self.expanded:
             self.expanded.discard(key)
-            widgets["sites_frame"].pack_forget()
-            if widgets["arrow_label"]:
-                widgets["arrow_label"].configure(text="▸")
+            widgets["details_frame"].pack_forget()
+            widgets["arrow_label"].configure(text="▸")
         else:
             self.expanded.add(key)
-            widgets["sites_frame"].pack(fill="x", padx=(46, 12), pady=(0, 10))
-            if widgets["arrow_label"]:
-                widgets["arrow_label"].configure(text="▾")
-            self.render_sites(key, self.entries.get(key, {"sites": {}}))
+            widgets["details_frame"].pack(fill="x", padx=(46, 12), pady=(0, 10))
+            widgets["arrow_label"].configure(text="▾")
+            self.render_expanded_details(key, self.entries.get(key, {"sites": {}, "sessions": [], "kind": "app"}))
 
-    def render_sites(self, key, entry):
-        sites_frame = self.row_widgets[key]["sites_frame"]
+    def render_expanded_details(self, key, entry):
+        container = self.row_widgets[key]["details_frame"]
 
-        for child in sites_frame.winfo_children():
+        for child in container.winfo_children():
             child.destroy()
 
-        sites = entry.get("sites", {})
-
-        if not sites:
+        # --- By site (browsers only) ---
+        if entry.get("kind") == "browser":
             ctk.CTkLabel(
-                sites_frame, text="No tabs recorded yet.",
-                font=("Consolas", 11), text_color="#555555"
-            ).pack(anchor="w", pady=4)
+                container, text="BY SITE", font=("Consolas", 10, "bold"), text_color="#555555"
+            ).pack(anchor="w", pady=(2, 4))
+
+            sites = entry.get("sites", {})
+            if not sites:
+                ctk.CTkLabel(
+                    container, text="No sites recorded yet.", font=("Consolas", 11), text_color="#555555"
+                ).pack(anchor="w", pady=(0, 8))
+            else:
+                max_site_seconds = max(sites.values()) or 1
+                for site, seconds in sorted(sites.items(), key=lambda kv: kv[1], reverse=True):
+                    row = ctk.CTkFrame(container, fg_color="transparent")
+                    row.pack(fill="x", pady=3)
+
+                    ctk.CTkLabel(
+                        row, text=site, font=("Consolas", 12), text_color="#cccccc", anchor="w", width=130
+                    ).pack(side="left")
+
+                    mini_bar = ctk.CTkProgressBar(row, height=6, progress_color="#4d94ff", fg_color="#262626")
+                    mini_bar.set(seconds / max_site_seconds)
+                    mini_bar.pack(side="left", fill="x", expand=True, padx=8)
+
+                    ctk.CTkLabel(
+                        row, text=format_duration(seconds), font=("Consolas", 11),
+                        text_color="#888888", width=55, anchor="e"
+                    ).pack(side="right")
+
+        # --- Sessions (every app) ---
+        ctk.CTkLabel(
+            container, text="OPEN TIMES TODAY", font=("Consolas", 10, "bold"), text_color="#555555"
+        ).pack(anchor="w", pady=(8, 4))
+
+        sessions = list(entry.get("sessions", []))
+        if self.active_key == key and self.active_since is not None:
+            sessions.append({"start": self.active_since.isoformat(), "end": None})
+
+        if not sessions:
+            ctk.CTkLabel(
+                container, text="No open times recorded yet.", font=("Consolas", 11), text_color="#555555"
+            ).pack(anchor="w", pady=(0, 6))
             return
 
-        for site, seconds in sorted(sites.items(), key=lambda kv: kv[1], reverse=True):
-            row = ctk.CTkFrame(sites_frame, fg_color="transparent")
+        for session in reversed(sessions[-20:]):
+            start_dt = datetime.fromisoformat(session["start"])
+            start_text = format_clock(start_dt)
+
+            if session["end"] is None:
+                end_text = "now"
+                end_color = "#ff5500"
+            else:
+                end_text = format_clock(datetime.fromisoformat(session["end"]))
+                end_color = "#aaaaaa"
+
+            row = ctk.CTkFrame(container, fg_color="transparent")
             row.pack(fill="x", pady=2)
 
             ctk.CTkLabel(row, text="•", font=("Consolas", 11), text_color="#555555", width=14).pack(side="left")
             ctk.CTkLabel(
-                row, text=site, font=("Consolas", 12), text_color="#aaaaaa", anchor="w"
-            ).pack(side="left", fill="x", expand=True)
+                row, text=start_text, font=("Consolas", 12), text_color="#aaaaaa"
+            ).pack(side="left")
+            ctk.CTkLabel(row, text="–", font=("Consolas", 12), text_color="#555555").pack(side="left", padx=6)
             ctk.CTkLabel(
-                row, text=format_duration(seconds), font=("Consolas", 12), text_color="#888888"
-            ).pack(side="right")
+                row, text=end_text, font=("Consolas", 12), text_color=end_color
+            ).pack(side="left")
 
     # ---------------------------------------------------
     # Rendering — screen-time summary card
@@ -653,27 +723,69 @@ class WatchDog(ctk.CTkFrame):
 
         width = int(canvas["width"])
         height = int(canvas["height"])
-        bar_area_height = height - 24
 
-        max_val = max(max(totals), 60)  # never divide by zero; floor at 1 minute
+        left_margin = 38
+        bottom_margin = 26
+        top_margin = 10
+        right_margin = 10
+
+        plot_width = width - left_margin - right_margin
+        plot_height = height - top_margin - bottom_margin
+
+        hours = [t / 3600 for t in totals]
+        max_hours = max(hours) if hours else 0
+
+        # Pick a "nice" step for the hour gridlines based on the data range
+        if max_hours <= 1:
+            step = 0.5
+        elif max_hours <= 4:
+            step = 1
+        elif max_hours <= 8:
+            step = 2
+        else:
+            step = 4
+
+        scale_max = step
+        while scale_max < max_hours:
+            scale_max += step
+
+        # Gridlines + Y-axis hour labels
+        grid_count = int(round(scale_max / step))
+        for g in range(grid_count + 1):
+            value = g * step
+            y = top_margin + plot_height - (value / scale_max) * plot_height
+            canvas.create_line(left_margin, y, left_margin + plot_width, y, fill="#232323")
+            label = f"{value:g}h"
+            canvas.create_text(
+                left_margin - 8, y, text=label, fill="#666666",
+                font=("Consolas", 9), anchor="e"
+            )
+
+        # X axis baseline
+        base_y = top_margin + plot_height
+        canvas.create_line(left_margin, base_y, left_margin + plot_width, base_y, fill="#333333")
+
         n = len(dates)
-        gap = 10
-        bar_width = (width - gap * (n + 1)) / n
+        gap = 12
+        bar_width = (plot_width - gap * (n + 1)) / n
 
-        for i, (d, total) in enumerate(zip(dates, totals)):
-            x0 = gap + i * (bar_width + gap)
+        for i, (d, total_h) in enumerate(zip(dates, hours)):
+            x0 = left_margin + gap + i * (bar_width + gap)
             x1 = x0 + bar_width
-            bar_h = max((total / max_val) * bar_area_height, 3)
-            y1 = bar_area_height
+            bar_h = (total_h / scale_max) * plot_height if scale_max else 0
+            bar_h = max(bar_h, 2) if total_h > 0 else 0
+            y1 = base_y
             y0 = y1 - bar_h
 
             is_today = (i == n - 1)
-            color = "#ff5500" if is_today else "#333333"
+            color = "#ff5500" if is_today else "#3a3a3a"
 
-            canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="")
+            if bar_h > 0:
+                canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="")
+
             canvas.create_text(
-                (x0 + x1) / 2, bar_area_height + 12,
-                text=d.strftime("%a")[0],
-                fill="#ff5500" if is_today else "#777777",
-                font=("Consolas", 10, "bold" if is_today else "normal")
+                (x0 + x1) / 2, base_y + 13,
+                text=d.strftime("%a"),
+                fill="#ff5500" if is_today else "#888888",
+                font=("Consolas", 9, "bold" if is_today else "normal")
             )
