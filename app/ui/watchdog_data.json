@@ -1,0 +1,46 @@
+{
+  "date": "2026-09-15",
+  "entries": {
+    "windowsterminal.exe": {
+      "display": "WindowsTerminal",
+      "kind": "app",
+      "seconds": 6.0,
+      "sites": {}
+    },
+    "python.exe": {
+      "display": "python",
+      "kind": "app",
+      "seconds": 384.0,
+      "sites": {}
+    },
+    "chrome.exe": {
+      "display": "chrome",
+      "kind": "browser",
+      "seconds": 642.0,
+      "sites": {
+        "Claude": 583.0,
+        "WhatsApp": 3.0,
+        "insidemars77/rex-app": 2.0,
+        "ChatGPT: Chat, Work, Create & Code with ": 54.0
+      }
+    },
+    "explorer.exe": {
+      "display": "explorer",
+      "kind": "app",
+      "seconds": 10.0,
+      "sites": {}
+    },
+    "code.exe": {
+      "display": "Code",
+      "kind": "app",
+      "seconds": 4.0,
+      "sites": {}
+    },
+    "lockapp.exe": {
+      "display": "LockApp",
+      "kind": "app",
+      "seconds": 57.0,
+      "sites": {}
+    }
+  }
+}

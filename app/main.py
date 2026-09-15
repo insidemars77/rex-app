@@ -7,7 +7,7 @@ from ui.git_master import GitMaster
 from ui.clipboard_manager import ClipboardManager
 from ui.notification_centre import NotificationCentre
 from ui.quick_app_group_2 import QuickAppGroup2
-
+from ui.watch_dog import WatchDog   
 
 #on top window
 class Launcher(ctk.CTk):
@@ -104,6 +104,11 @@ class MainWindow(ctk.CTkToplevel):
             "Dashboard",
             "Your workspace at a glance"
         )
+
+        #watch dog                      
+        watch_dog = WatchDog(self.content)
+        self.pages["Watch Dog"] = watch_dog
+        
 
         welcome = ctk.CTkFrame(
             dashboard,
@@ -314,7 +319,7 @@ class SidePanel(ctk.CTkFrame):
         ctk.CTkFrame(self, height=1, fg_color="#292929").pack(fill="x", padx=18, pady=(0, 16))
 
         # Navigation buttons
-        buttons = ["Git Master","Clipboard Manager","Quick App Groups","Notification Centre","Dashboard", "Workflows", "Agents", "Settings"]
+        buttons = ["Git Master","Clipboard Manager","Quick App Groups","Notification Centre","Dashboard", "Watch Dog", "Workflows", "Agents", "Settings"]
         self.nav_buttons = {}
 
         for item in buttons:
