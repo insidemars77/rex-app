@@ -2,19 +2,81 @@ import customtkinter as ctk
 import subprocess
 import os
 import json
+import sqlite3
 from tkinter import filedialog, messagebox
 
 
 class QuickAppGroup2(ctk.CTkFrame):
 
+    DB_DIR = os.path.join(
+        os.getenv("APPDATA") or os.path.expanduser("~"), "Rex"
+    )
+    DB_PATH = os.path.join(DB_DIR, "rex.db")
+    LEGACY_DATA_FILE = os.path.join("data", "apps.json")
+
     def __init__(self, master):
         super().__init__(master, fg_color="#0d0d0d", corner_radius=0)
 
-        self.groups = self.get_default_groups()
+        self.setup_database()
+        self.groups = self.load_groups()
         self.current_group = list(self.groups.keys())[0]
 
         self.build_ui()
         self.show_group(self.current_group)
+
+    @classmethod
+    def get_connection(cls):
+        return sqlite3.connect(cls.DB_PATH)
+
+    @classmethod
+    def setup_database(cls):
+        os.makedirs(cls.DB_DIR, exist_ok=True)
+        with cls.get_connection() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS quick_app_groups (
+                    group_name TEXT PRIMARY KEY,
+                    apps_json TEXT NOT NULL
+                )
+                """
+            )
+
+    def load_groups(self):
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT group_name, apps_json FROM quick_app_groups ORDER BY rowid"
+            ).fetchall()
+
+        if rows:
+            return {
+                group_name: json.loads(apps_json)
+                for group_name, apps_json in rows
+            }
+
+        groups = self.get_default_groups()
+        if os.path.exists(self.LEGACY_DATA_FILE):
+            with open(self.LEGACY_DATA_FILE, "r", encoding="utf-8") as f:
+                legacy_apps = json.load(f)
+            if not isinstance(legacy_apps, list):
+                raise ValueError("Legacy app data must be a list")
+            if legacy_apps:
+                groups["Custom"] = legacy_apps
+
+        self.save_groups(groups)
+        if os.path.exists(self.LEGACY_DATA_FILE):
+            os.remove(self.LEGACY_DATA_FILE)
+        return groups
+
+    def save_groups(self, groups):
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM quick_app_groups")
+            conn.executemany(
+                "INSERT INTO quick_app_groups (group_name, apps_json) VALUES (?, ?)",
+                [
+                    (group_name, json.dumps(apps))
+                    for group_name, apps in groups.items()
+                ],
+            )
 
     # =========================================================
     # Default Groups (Folders)
