@@ -384,14 +384,14 @@ class WatchDog(ctk.CTkFrame):
 
         self.tick_count += 1
         self.render_rows()
+        self.refresh_summary()
+        for key in list(self.expanded):
+            if key in self.entries:
+                self.render_expanded_details(key, self.entries[key])
 
         if self.tick_count % SAVE_EVERY_N_TICKS == 0:
             self.save_data()
             self.save_history()
-            self.refresh_summary()
-            for key in list(self.expanded):
-                if key in self.entries:
-                    self.render_expanded_details(key, self.entries[key])
 
         self.after(POLL_INTERVAL_MS, self.tick)
 
@@ -736,7 +736,7 @@ class WatchDog(ctk.CTkFrame):
         else:
             self.summary_change_label.configure(text="No data for yesterday yet", text_color="#666666")
 
-        self.updated_label.configure(text=f"Updated {datetime.now().strftime('%H:%M')}")
+        self.updated_label.configure(text=f"Updated {datetime.now().strftime('%H:%M:%S')}")
 
         self.draw_weekly_chart(dates, totals)
 
