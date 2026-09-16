@@ -2,12 +2,18 @@ import customtkinter as ctk
 from datetime import datetime
 import json
 import os
+import sqlite3
 import uuid
 
 
 class NotificationCentre(ctk.CTkFrame):
 
     instance = None
+    DB_DIR = os.path.join(
+        os.getenv("APPDATA") or os.path.expanduser("~"), "Rex"
+    )
+    DB_PATH = os.path.join(DB_DIR, "rex.db")
+    LEGACY_DATA_FILE = os.path.join("data", "notifications.json")
 
     def __init__(self, master):
         super().__init__(master, fg_color="#0d0d0d", corner_radius=0)
@@ -17,6 +23,7 @@ class NotificationCentre(ctk.CTkFrame):
         self.notifications = []
         self.filter_type = "All"
 
+        self.setup_database()
         self.load_notifications()
         self.build_ui()
         self.refresh_list()
@@ -111,24 +118,78 @@ class NotificationCentre(ctk.CTkFrame):
 
 
     def load_notifications(self):
-        try:
-            os.makedirs("data", exist_ok=True)
-            if os.path.exists("data/notifications.json"):
-                with open("data/notifications.json", "r", encoding="utf-8") as f:
-                    self.notifications = json.load(f)
-            else:
-                self.notifications = []
-                self.save_notifications()
-        except Exception:
-            self.notifications = []
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, title, message, type, time, read, timestamp "
+                "FROM notifications ORDER BY timestamp DESC"
+            ).fetchall()
+
+        self.notifications = [
+            {
+                "id": notif_id,
+                "title": title,
+                "message": message,
+                "type": type_,
+                "time": time,
+                "read": bool(read),
+                "timestamp": timestamp,
+            }
+            for notif_id, title, message, type_, time, read, timestamp in rows
+        ]
+
+        if not self.notifications and os.path.exists(self.LEGACY_DATA_FILE):
+            with open(self.LEGACY_DATA_FILE, "r", encoding="utf-8") as f:
+                legacy_notifications = json.load(f)
+            if not isinstance(legacy_notifications, list):
+                raise ValueError("Legacy notifications data must be a list")
+            self.notifications = legacy_notifications
+            self.save_notifications()
+            os.remove(self.LEGACY_DATA_FILE)
 
     def save_notifications(self):
-        try:
-            os.makedirs("data", exist_ok=True)
-            with open("data/notifications.json", "w", encoding="utf-8") as f:
-                json.dump(self.notifications, f, indent=4)
-        except Exception:
-            pass
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM notifications")
+            conn.executemany(
+                """
+                INSERT INTO notifications
+                    (id, title, message, type, time, read, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        notification["id"],
+                        notification["title"],
+                        notification["message"],
+                        notification.get("type", "System"),
+                        notification.get("time", ""),
+                        int(notification.get("read", False)),
+                        notification.get("timestamp", 0),
+                    )
+                    for notification in self.notifications
+                ],
+            )
+
+    @classmethod
+    def get_connection(cls):
+        return sqlite3.connect(cls.DB_PATH)
+
+    @classmethod
+    def setup_database(cls):
+        os.makedirs(cls.DB_DIR, exist_ok=True)
+        with cls.get_connection() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    time TEXT NOT NULL,
+                    read INTEGER NOT NULL DEFAULT 0,
+                    timestamp REAL NOT NULL
+                )
+                """
+            )
 
     def _create_notif(self, title, message, type_="System"):
         return {
