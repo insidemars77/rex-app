@@ -17,8 +17,8 @@ Notes / limitations:
   at a given moment, accumulated over the day.
 - Idle time (no keyboard/mouse input for 60s) is not counted, and ends
   whatever session was in progress.
-- Daily totals are saved to watchdog_history.json so the weekly chart
-  and "vs yesterday" comparison survive restarts.
+- Daily totals are saved in the user's Rex data folder so the weekly chart
+  and "vs yesterday" comparison survive restarts without changing the repository.
 """
 
 import customtkinter as ctk
@@ -26,6 +26,7 @@ import tkinter as tk
 import ctypes
 import json
 import os
+import sqlite3
 from datetime import datetime, timedelta
 
 try:
@@ -41,12 +42,12 @@ except ImportError:
 # Config
 # =========================================================
 
-DATA_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "watchdog_data.json"
+REX_DATA_DIR = os.path.join(
+    os.getenv("APPDATA") or os.path.expanduser("~"), "Rex"
 )
-HISTORY_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "watchdog_history.json"
-)
+DB_PATH = os.path.join(REX_DATA_DIR, "rex.db")
+LEGACY_DATA_FILE = os.path.join(REX_DATA_DIR, "watchdog_data.json")
+LEGACY_HISTORY_FILE = os.path.join(REX_DATA_DIR, "watchdog_history.json")
 HISTORY_KEEP_DAYS = 30
 
 POLL_INTERVAL_MS = 1000        # how often we sample the active window
@@ -179,6 +180,9 @@ class WatchDog(ctk.CTkFrame):
         self.active_key = None      # process_key currently in the foreground
         self.active_since = None    # datetime it became the foreground window
 
+        self.setup_database()
+        self.history = {}
+        self.migrate_legacy_data()
         self.load_data()
         self.history = self.load_history()
 
@@ -425,70 +429,93 @@ class WatchDog(ctk.CTkFrame):
         self.refresh_summary()
 
     # ---------------------------------------------------
-    # Persistence — today's live data
-    # ---------------------------------------------------
+    # Persistence - SQLite database
 
-    def today_str(self):
-        return datetime.now().strftime("%Y-%m-%d")
+    def get_connection(self):
+        return sqlite3.connect(DB_PATH)
+
+    def setup_database(self):
+        os.makedirs(REX_DATA_DIR, exist_ok=True)
+        with self.get_connection() as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS watchdog_entries (
+                date TEXT NOT NULL, process_key TEXT NOT NULL, display TEXT NOT NULL,
+                kind TEXT NOT NULL, seconds REAL NOT NULL, sites_json TEXT NOT NULL,
+                sessions_json TEXT NOT NULL, PRIMARY KEY (date, process_key)
+            )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS watchdog_history (
+                date TEXT PRIMARY KEY, total_seconds REAL NOT NULL,
+                app_seconds REAL NOT NULL, web_seconds REAL NOT NULL
+            )""")
+
+    def migrate_legacy_data(self):
+        if os.path.exists(LEGACY_DATA_FILE):
+            try:
+                with open(LEGACY_DATA_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data.get("date") == self.today:
+                    self.entries = data.get("entries", {})
+                    self.save_data()
+                os.remove(LEGACY_DATA_FILE)
+            except (json.JSONDecodeError, OSError):
+                pass
+        if os.path.exists(LEGACY_HISTORY_FILE):
+            try:
+                with open(LEGACY_HISTORY_FILE, "r", encoding="utf-8") as f:
+                    self.history = json.load(f)
+                self.save_history()
+                os.remove(LEGACY_HISTORY_FILE)
+            except (json.JSONDecodeError, OSError):
+                pass
 
     def load_data(self):
-        if not os.path.exists(DATA_FILE):
-            return
-
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            if data.get("date") == self.today:
-                entries = data.get("entries", {})
-                valid = all("sites" in e and "kind" in e and "sessions" in e for e in entries.values())
-                self.entries = entries if valid else {}
-
-        except (json.JSONDecodeError, OSError):
-            self.entries = {}
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT process_key, display, kind, seconds, sites_json, sessions_json "
+                "FROM watchdog_entries WHERE date = ?", (self.today,)
+            ).fetchall()
+        self.entries = {
+            key: {"display": display, "kind": kind, "seconds": seconds,
+                  "sites": json.loads(sites_json), "sessions": json.loads(sessions_json)}
+            for key, display, kind, seconds, sites_json, sessions_json in rows
+        }
 
     def save_data(self):
-        try:
-            with open(DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump({"date": self.today, "entries": self.entries}, f, indent=2)
-        except OSError:
-            pass
-
-    # ---------------------------------------------------
-    # Persistence — daily history (yesterday + weekly chart)
-    # ---------------------------------------------------
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM watchdog_entries WHERE date = ?", (self.today,))
+            conn.executemany(
+                "INSERT INTO watchdog_entries (date, process_key, display, kind, seconds, sites_json, sessions_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [(self.today, key, entry["display"], entry["kind"], entry["seconds"],
+                  json.dumps(entry.get("sites", {})), json.dumps(entry.get("sessions", [])))
+                 for key, entry in self.entries.items()]
+            )
 
     def load_history(self):
-        if not os.path.exists(HISTORY_FILE):
-            return {}
-
-        try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT date, total_seconds, app_seconds, web_seconds FROM watchdog_history ORDER BY date"
+            ).fetchall()
+        return {date: {"total_seconds": total, "app_seconds": app, "web_seconds": web}
+                for date, total, app, web in rows}
 
     def save_history(self):
         if len(self.history) > HISTORY_KEEP_DAYS:
             for old_date in sorted(self.history.keys())[:-HISTORY_KEEP_DAYS]:
                 del self.history[old_date]
-
-        try:
-            with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.history, f, indent=2)
-        except OSError:
-            pass
+        with self.get_connection() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO watchdog_history (date, total_seconds, app_seconds, web_seconds) "
+                "VALUES (?, ?, ?, ?)",
+                [(date, values["total_seconds"], values["app_seconds"], values["web_seconds"])
+                 for date, values in self.history.items()]
+            )
 
     def commit_today_to_history(self):
         app_seconds = sum(e["seconds"] for e in self.entries.values() if e["kind"] == "app")
         web_seconds = sum(e["seconds"] for e in self.entries.values() if e["kind"] == "browser")
-        self.history[self.today] = {
-            "total_seconds": app_seconds + web_seconds,
-            "app_seconds": app_seconds,
-            "web_seconds": web_seconds,
-        }
+        self.history[self.today] = {"total_seconds": app_seconds + web_seconds,
+                                    "app_seconds": app_seconds, "web_seconds": web_seconds}
 
-    # ---------------------------------------------------
     # Rendering — app list (in-place updates, no destroy/rebuild)
     # ---------------------------------------------------
 
