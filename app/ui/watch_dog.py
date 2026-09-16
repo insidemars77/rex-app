@@ -194,6 +194,9 @@ class WatchDog(ctk.CTkFrame):
         else:
             self.show_dependency_warning()
 
+    def today_str(self):
+        return datetime.now().strftime("%Y-%m-%d")
+
     # ---------------------------------------------------
     # UI scaffolding
     # ---------------------------------------------------
