@@ -11,6 +11,8 @@
 #mars: plz dont push in main branch
 
 import customtkinter as ctk
+import ctypes
+from ctypes import wintypes
 #ui folder imports
 from ui.git_master import GitMaster
 from ui.clipboard_manager import ClipboardManager
@@ -26,7 +28,7 @@ class Launcher(ctk.CTk):
 
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        self.geometry("80x80+1285+640")
+        self.position_bottom_right()
         self.configure(fg_color="#111111")
 
         self.button = ctk.CTkButton(
@@ -41,6 +43,24 @@ class Launcher(ctk.CTk):
         self.button.pack(fill="both", expand=True, padx=3, pady=3)
 
         self.main_window = None
+
+    def position_bottom_right(self):
+        size = 80
+        margin = 16
+        right = self.winfo_screenwidth()
+        bottom = self.winfo_screenheight()
+
+        if hasattr(ctypes, "windll"):
+            work_area = wintypes.RECT()
+            if ctypes.windll.user32.SystemParametersInfoW(
+                0x0030, 0, ctypes.byref(work_area), 0
+            ):
+                right = work_area.right
+                bottom = work_area.bottom
+
+        left = max(margin, right - size - margin)
+        top = max(margin, bottom - size - margin)
+        self.geometry(f"{size}x{size}+{left}+{top}")
 
     def open_main(self):
         self.withdraw()
