@@ -89,28 +89,19 @@ class GitMaster(ctk.CTkFrame):
         )
         actions.pack(fill="x", padx=25, pady=(0, 10))
 
-        # Branch selector
-        ctk.CTkLabel(actions, text="Branch:", font=("Consolas", 13)).pack(side="left", padx=(15, 5), pady=10)
-
-        self.branch_menu = ctk.CTkOptionMenu(
+        self.branch_action_menu = ctk.CTkOptionMenu(
             actions,
-            values=["(no branches)"],
-            width=180,
+            values=["Switch", "Merge"],
+            width=140,
             font=("Consolas", 13),
             fg_color="#222222",
             button_color="#333333",
             button_hover_color="#444444",
             dropdown_fg_color="#222222",
-            command=self.on_branch_selected
+            command=self.on_branch_action_selected
         )
-        self.branch_menu.pack(side="left", padx=5)
-
-        self.switch_btn = ctk.CTkButton(
-            actions, text="Switch", width=80, font=("Consolas", 13),
-            fg_color="#222222", hover_color="#333333",
-            command=self.switch_branch
-        )
-        self.switch_btn.pack(side="left", padx=5)
+        self.branch_action_menu.set("Branch Actions")
+        self.branch_action_menu.pack(side="left", padx=(15, 5))
 
         # --- Staging & Commit ---
         self.add_btn = ctk.CTkOptionMenu(
@@ -305,23 +296,9 @@ class GitMaster(ctk.CTkFrame):
         result = self.run_git(["branch", "--format=%(refname:short)"], show_output=False)
         if result is None:
             self.branches = []
-            self.branch_menu.configure(values=["(no branches)"])
             return
 
         self.branches = [b.strip() for b in result.splitlines() if b.strip()]
-        if not self.branches:
-            self.branch_menu.configure(values=["(no branches)"])
-            return
-
-        display = []
-        for b in self.branches:
-            if b == self.current_branch:
-                display.insert(0, f"● {b}")
-            else:
-                display.append(b)
-
-        self.branch_menu.configure(values=display)
-        self.branch_menu.set(display[0] if display else "(no branches)")
 
     def load_commits(self):
         result = self.run_git(
@@ -438,19 +415,100 @@ class GitMaster(ctk.CTkFrame):
     # Operations
     # =========================================================
 
-    def on_branch_selected(self, choice):
-        pass
+    def on_branch_action_selected(self, choice):
+        self.branch_action_menu.set("Branch Actions")
+        if choice == "Switch":
+            self.open_switch_branch_dialog()
+        elif choice == "Merge":
+            self.open_merge_dialog()
 
-    def switch_branch(self):
+    def open_switch_branch_dialog(self):
         if not self.current_repo:
             self.append_output("⚠ No repository selected.\n")
             return
 
-        selected = self.branch_menu.get()
-        if not selected or selected.startswith("(no"):
+        if not self.branches:
+            messagebox.showinfo("Git Master", "This repository has no local branches.")
             return
 
-        branch = selected.replace("● ", "").strip()
+        dialog = self.create_branch_dialog(
+            "Switch Branch",
+            "Choose the branch to check out."
+        )
+        branch_menu = ctk.CTkOptionMenu(
+            dialog,
+            values=self.branches,
+            width=360,
+            font=("Consolas", 13),
+            fg_color="#222222",
+            button_color="#333333",
+            button_hover_color="#444444",
+            dropdown_fg_color="#222222"
+        )
+        branch_menu.set(self.current_branch if self.current_branch in self.branches else self.branches[0])
+        branch_menu.pack(fill="x", padx=22, pady=(0, 18))
+
+        footer = self.create_branch_dialog_footer(dialog)
+
+        def switch_selected_branch():
+            branch = branch_menu.get()
+            dialog.destroy()
+            self.switch_branch(branch)
+
+        ctk.CTkButton(
+            footer,
+            text="Switch",
+            width=110,
+            height=36,
+            font=("Consolas", 12, "bold"),
+            fg_color="#ff5500",
+            hover_color="#cc4400",
+            command=switch_selected_branch
+        ).pack(side="right")
+
+    def create_branch_dialog(self, title, description):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(title)
+        dialog.geometry("460x230")
+        dialog.resizable(False, False)
+        dialog.configure(fg_color="#0d0d0d")
+        dialog.transient(self.winfo_toplevel())
+        dialog.grab_set()
+
+        ctk.CTkLabel(
+            dialog,
+            text=title,
+            font=("Consolas", 21, "bold"),
+            text_color="#ffffff",
+            anchor="w"
+        ).pack(fill="x", padx=22, pady=(20, 4))
+        ctk.CTkLabel(
+            dialog,
+            text=description,
+            font=("Consolas", 12),
+            text_color="#888888",
+            anchor="w",
+            justify="left",
+            wraplength=410
+        ).pack(fill="x", padx=22, pady=(0, 14))
+        return dialog
+
+    def create_branch_dialog_footer(self, dialog):
+        footer = ctk.CTkFrame(dialog, fg_color="transparent")
+        footer.pack(fill="x", padx=22, pady=(0, 18))
+        ctk.CTkButton(
+            footer,
+            text="Cancel",
+            width=90,
+            height=36,
+            font=("Consolas", 12),
+            fg_color="#222222",
+            hover_color="#333333",
+            command=dialog.destroy
+        ).pack(side="right")
+        return footer
+
+    def switch_branch(self, branch):
         if branch == self.current_branch:
             self.append_output(f"Already on branch '{branch}'\n")
             return
@@ -460,6 +518,129 @@ class GitMaster(ctk.CTkFrame):
         if result is not None:
             self.load_git_data()
             self.append_output(f"✓ Now on branch '{branch}'\n")
+
+    def open_merge_dialog(self):
+        if not self.current_repo:
+            self.append_output("⚠ No repository selected.\n")
+            return
+        if len(self.branches) < 2:
+            messagebox.showinfo("Git Master", "Merge requires at least two local branches.")
+            return
+
+        dialog = self.create_branch_dialog(
+            "Merge Branches",
+            "Choose the source branch to merge into the target branch."
+        )
+        dialog.geometry("500x340")
+
+        ctk.CTkLabel(
+            dialog,
+            text="Source branch",
+            font=("Consolas", 12, "bold"),
+            text_color="#ff6a1a",
+            anchor="w"
+        ).pack(fill="x", padx=22, pady=(0, 5))
+        source_menu = ctk.CTkOptionMenu(
+            dialog,
+            values=self.branches,
+            width=400,
+            font=("Consolas", 13),
+            fg_color="#222222",
+            button_color="#333333",
+            button_hover_color="#444444",
+            dropdown_fg_color="#222222"
+        )
+        source_menu.set(next((branch for branch in self.branches if branch != self.current_branch), self.branches[0]))
+        source_menu.pack(fill="x", padx=22, pady=(0, 14))
+
+        ctk.CTkLabel(
+            dialog,
+            text="Target branch",
+            font=("Consolas", 12, "bold"),
+            text_color="#ff6a1a",
+            anchor="w"
+        ).pack(fill="x", padx=22, pady=(0, 5))
+        target_menu = ctk.CTkOptionMenu(
+            dialog,
+            values=self.branches,
+            width=400,
+            font=("Consolas", 13),
+            fg_color="#222222",
+            button_color="#333333",
+            button_hover_color="#444444",
+            dropdown_fg_color="#222222"
+        )
+        target_menu.set(self.current_branch if self.current_branch in self.branches else self.branches[0])
+        target_menu.pack(fill="x", padx=22, pady=(0, 16))
+
+        footer = self.create_branch_dialog_footer(dialog)
+
+        def merge_selected_branches():
+            source = source_menu.get()
+            target = target_menu.get()
+            if source == target:
+                messagebox.showwarning(
+                    "Git Master",
+                    "Choose two different branches to merge.",
+                    parent=dialog
+                )
+                return
+
+            if not messagebox.askyesno(
+                "Confirm Merge",
+                f"Merge '{source}' into '{target}'?\n\n"
+                f"The repository will switch to '{target}' before merging.",
+                parent=dialog
+            ):
+                return
+
+            dialog.destroy()
+            self.merge_branches(source, target)
+
+        ctk.CTkButton(
+            footer,
+            text="Merge",
+            width=110,
+            height=36,
+            font=("Consolas", 12, "bold"),
+            fg_color="#ff5500",
+            hover_color="#cc4400",
+            command=merge_selected_branches
+        ).pack(side="right", padx=(0, 8))
+
+    def merge_branches(self, source, target):
+        status = self.run_git(
+            ["status", "--porcelain", "--untracked-files=all"],
+            show_output=False
+        )
+        if status is None:
+            return
+        if status.strip():
+            messagebox.showwarning(
+                "Git Master",
+                "Commit or stash your local changes before merging branches."
+            )
+            self.run_git(["status", "--short"])
+            return
+
+        original_branch = self.current_branch
+        if target != original_branch:
+            self.append_output(f"Switching to target branch '{target}'…\n")
+            if self.run_git(["switch", target]) is None:
+                return
+
+        self.load_git_data()
+        self.append_output(f"Merging '{source}' into '{target}'…\n")
+        result = self.run_git(["merge", "--no-edit", source])
+        if result is None:
+            self.append_output(
+                "⚠ Merge did not complete successfully. Resolve any conflicts, then finish or abort the merge.\n"
+            )
+            self.load_git_data()
+            return
+
+        self.load_git_data()
+        self.append_output(f"✓ Merged '{source}' into '{target}'. You are now on '{target}'.\n")
 
     def stage_all(self):
         """git add ."""
