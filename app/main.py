@@ -84,8 +84,7 @@ class MainWindow(ctk.CTkToplevel):
 
         self.launcher = launcher
         self.title("Rex")
-        self.geometry("1120x720")
-        self.minsize(960, 620)
+        self.state("zoomed")
         self.attributes("-topmost", False)
         self.configure(fg_color="#0d0d0d")
 

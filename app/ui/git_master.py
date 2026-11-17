@@ -898,9 +898,35 @@ class GitMaster(ctk.CTkFrame):
 
 class GitGraph(ctk.CTkFrame):
 
-    def __init__(self, master, select_commit=None):
+    def __init__(self, master, select_commit=None, allow_fullscreen=True):
         super().__init__(master, fg_color="#101010", corner_radius=10)
         self.select_commit = select_commit
+        self.allow_fullscreen = allow_fullscreen
+        self.commits = []
+        self.fullscreen_window = None
+        self.fullscreen_graph = None
+
+        canvas_row = 0
+        if self.allow_fullscreen:
+            toolbar = ctk.CTkFrame(self, fg_color="transparent")
+            toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", padx=8, pady=(6, 2))
+            ctk.CTkLabel(
+                toolbar,
+                text="Commit history",
+                font=("Consolas", 11, "bold"),
+                text_color="#777777"
+            ).pack(side="left", padx=6)
+            ctk.CTkButton(
+                toolbar,
+                text="⛶ Full Screen",
+                width=120,
+                height=28,
+                font=("Consolas", 11, "bold"),
+                fg_color="#222222",
+                hover_color="#333333",
+                command=self.open_fullscreen
+            ).pack(side="right")
+            canvas_row = 1
 
         self.canvas = ctk.CTkCanvas(self, background="#101010", highlightthickness=0)
         self.vertical_scrollbar = ctk.CTkScrollbar(self, orientation="vertical", command=self.canvas.yview)
@@ -910,10 +936,10 @@ class GitGraph(ctk.CTkFrame):
             xscrollcommand=self.horizontal_scrollbar.set
         )
 
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        self.vertical_scrollbar.grid(row=0, column=1, sticky="ns")
-        self.horizontal_scrollbar.grid(row=1, column=0, sticky="ew")
-        self.grid_rowconfigure(0, weight=1)
+        self.canvas.grid(row=canvas_row, column=0, sticky="nsew")
+        self.vertical_scrollbar.grid(row=canvas_row, column=1, sticky="ns")
+        self.horizontal_scrollbar.grid(row=canvas_row + 1, column=0, sticky="ew")
+        self.grid_rowconfigure(canvas_row, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
         self.canvas.bind("<MouseWheel>", self.on_scroll)
@@ -922,6 +948,10 @@ class GitGraph(ctk.CTkFrame):
         self.canvas.bind("<Button-5>", lambda e: self.canvas.yview_scroll(1, "units"))
 
     def draw_graph(self, commits):
+        self.commits = list(commits)
+        if self.fullscreen_graph is not None and self.fullscreen_graph.winfo_exists():
+            self.fullscreen_graph.draw_graph(self.commits)
+
         self.canvas.delete("all")
         if not commits:
             self.canvas.create_text(300, 200, text="No Git history found.",
@@ -985,6 +1015,56 @@ class GitGraph(ctk.CTkFrame):
         total_height = y_start + len(commits) * y_gap + box_height + 40
         total_width = x_start + max(len(lanes), 1) * lane_width + box_width + 80
         self.canvas.configure(scrollregion=(0, 0, total_width, total_height))
+
+    def open_fullscreen(self):
+        if self.fullscreen_window is not None and self.fullscreen_window.winfo_exists():
+            self.fullscreen_window.lift()
+            return
+
+        window = ctk.CTkToplevel(self.winfo_toplevel())
+        self.fullscreen_window = window
+        window.title("Git Commit Tree")
+        window.configure(fg_color="#0d0d0d")
+        window.transient(self.winfo_toplevel())
+        window.attributes("-fullscreen", True)
+        window.lift()
+        window.focus_force()
+        window.bind("<Escape>", self.close_fullscreen)
+        window.protocol("WM_DELETE_WINDOW", self.close_fullscreen)
+
+        toolbar = ctk.CTkFrame(window, fg_color="#151515", corner_radius=0)
+        toolbar.pack(fill="x")
+        ctk.CTkLabel(
+            toolbar,
+            text="Git Commit Tree",
+            font=("Consolas", 18, "bold"),
+            text_color="#ffffff"
+        ).pack(side="left", padx=20, pady=12)
+        ctk.CTkButton(
+            toolbar,
+            text="Exit Full Screen",
+            width=140,
+            height=32,
+            font=("Consolas", 12),
+            fg_color="#222222",
+            hover_color="#333333",
+            command=self.close_fullscreen
+        ).pack(side="right", padx=16, pady=8)
+
+        self.fullscreen_graph = GitGraph(
+            window,
+            select_commit=self.select_commit,
+            allow_fullscreen=False
+        )
+        self.fullscreen_graph.pack(fill="both", expand=True, padx=12, pady=12)
+        self.fullscreen_graph.draw_graph(self.commits)
+
+    def close_fullscreen(self, _event=None):
+        window = self.fullscreen_window
+        self.fullscreen_window = None
+        self.fullscreen_graph = None
+        if window is not None and window.winfo_exists():
+            window.destroy()
 
     def draw_commit(self, commit, x, y, width, height):
         rect = self.canvas.create_rectangle(x, y, x + width, y + height,
