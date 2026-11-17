@@ -1,14 +1,5 @@
-#NOTE: try not to touch the main.py
-#especially you digi
-#29 aug 2026
-#4 features: git master, clipboard manager, notification centre, quick app groups
-#out of 15
-#import your feature from ui folder and add it to the main window
-#reffer to line 67 to 72 from button to add your feature to the side panel
-#and line 332 from button label to add your feature to the side panel
-#lines memtioned above are the only lines you need to touch to add your feature to the main window
-#they may be changed as we add more features to the main window
-#mars: plz dont push in main branch
+# Rex desktop workflow assistant.
+# Feature pages are implemented in app/ui and registered in MainWindow.
 
 import customtkinter as ctk
 import ctypes
