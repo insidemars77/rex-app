@@ -481,40 +481,24 @@ class GitMaster(ctk.CTkFrame):
             self.stage_all()
         self.add_btn.set("Stage All")
 
-    @staticmethod
-    def parse_status_paths(status_output):
-        paths = []
-        records = status_output.split("\0")
-        index = 0
-        while index < len(records):
-            record = records[index]
-            if len(record) >= 4 and record[2] == " ":
-                status = record[:2]
-                path = record[3:]
-                if path:
-                    paths.append(path)
-                if "R" in status and index + 1 < len(records):
-                    paths.append(records[index + 1])
-                index += 2 if "R" in status or "C" in status else 1
-            else:
-                index += 1
-        return sorted(set(paths), key=str.casefold)
-
     def stage_selection(self):
         if not self.current_repo:
             self.append_output("⚠ No repository selected.\n")
             return
 
-        status = self.run_git(
-            ["status", "--short", "--untracked-files=all", "-z"],
+        tracked_files = self.run_git(
+            ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
             show_output=False
         )
-        if status is None:
+        if tracked_files is None:
             return
 
-        paths = self.parse_status_paths(status)
+        paths = sorted(
+            {path for path in tracked_files.split("\0") if path},
+            key=str.casefold
+        )
         if not paths:
-            messagebox.showinfo("Git Master", "There are no changed files to stage.")
+            messagebox.showinfo("Git Master", "There are no files in this repository.")
             return
 
         self.show_file_selection_dialog(
@@ -522,7 +506,7 @@ class GitMaster(ctk.CTkFrame):
             paths,
             "Stage Selected",
             self.stage_selected_files,
-            "Select the changed files to include in your next commit."
+            "Select repository files to stage. Unchanged files will be left untouched."
         )
 
     def stage_selected_files(self, paths):
@@ -530,7 +514,9 @@ class GitMaster(ctk.CTkFrame):
         result = self.run_git(["add", "--"] + pathspecs, show_output=True)
         if result is None:
             return
-        self.append_output(f"✓ Staged {len(paths)} selected file(s).\n")
+        self.append_output(
+            f"✓ Processed {len(paths)} selected file(s); unchanged files were left untouched.\n"
+        )
         self.run_git(["status", "--short"])
 
     def show_file_selection_dialog(self, title, paths, action_text, on_confirm, description):
@@ -765,9 +751,20 @@ class GitMaster(ctk.CTkFrame):
         if incoming is None:
             return
 
-        paths = [path for path in incoming.split("\0") if path]
+        repository_files = self.run_git(
+            ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            show_output=False
+        )
+        if repository_files is None:
+            return
+
+        paths = sorted(
+            {path for path in incoming.split("\0") if path}
+            | {path for path in repository_files.split("\0") if path},
+            key=str.casefold
+        )
         if not paths:
-            messagebox.showinfo("Git Master", "There are no incoming file changes.")
+            messagebox.showinfo("Git Master", "There are no files in this repository.")
             return
 
         self.show_file_selection_dialog(
@@ -775,7 +772,7 @@ class GitMaster(ctk.CTkFrame):
             paths,
             "Apply Selected",
             self.pull_selected_files,
-            "Choose incoming files to copy into your working tree. Local changes are protected."
+            "Choose files to restore from upstream. Unchanged files stay unchanged, and local changes are protected."
         )
 
     def pull_selected_files(self, paths):
