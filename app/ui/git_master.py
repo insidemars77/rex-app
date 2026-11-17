@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import BooleanVar, filedialog, messagebox, simpledialog
 import subprocess
 import os
 import threading
@@ -113,11 +113,14 @@ class GitMaster(ctk.CTkFrame):
         self.switch_btn.pack(side="left", padx=5)
 
         # --- Staging & Commit ---
-        self.add_btn = ctk.CTkButton(
-            actions, text="＋ Stage All", width=100, font=("Consolas", 13),
-            fg_color="#222222", hover_color="#333333",
-            command=self.stage_all
+        self.add_btn = ctk.CTkOptionMenu(
+            actions, width=145, font=("Consolas", 13),
+            values=["Stage All", "Stage Selection"],
+            fg_color="#222222", button_color="#333333",
+            button_hover_color="#444444", dropdown_fg_color="#222222",
+            command=self.on_stage_option_selected
         )
+        self.add_btn.set("Stage All")
         self.add_btn.pack(side="left", padx=(15, 5))
 
         self.commit_btn = ctk.CTkButton(
@@ -135,11 +138,14 @@ class GitMaster(ctk.CTkFrame):
         )
         self.push_btn.pack(side="left", padx=5)
 
-        self.pull_btn = ctk.CTkButton(
-            actions, text="⬇ Pull", width=90, font=("Consolas", 13),
-            fg_color="#222222", hover_color="#333333",
-            command=self.pull_current
+        self.pull_btn = ctk.CTkOptionMenu(
+            actions, values=["Pull All", "Pull Selection"], width=120,
+            font=("Consolas", 13),
+            fg_color="#222222", button_color="#333333",
+            button_hover_color="#444444", dropdown_fg_color="#222222",
+            command=self.on_pull_option_selected
         )
+        self.pull_btn.set("Pull All")
         self.pull_btn.pack(side="left", padx=5)
 
         self.status_btn = ctk.CTkButton(
@@ -388,11 +394,45 @@ class GitMaster(ctk.CTkFrame):
             return None
 
     def run_git_async(self, command, callback=None):
+        if not self.current_repo:
+            self.append_output("⚠ No repository selected.\n")
+            return
+
+        full_cmd = ["git", "-C", self.current_repo] + command
+
         def worker():
-            result = self.run_git(command, show_output=True)
+            try:
+                result = subprocess.run(
+                    full_cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace"
+                )
+            except FileNotFoundError:
+                self.after(0, self.report_missing_git)
+                return
+
+            output = (result.stdout or "") + (result.stderr or "")
+            if output.strip() or result.returncode != 0:
+                rendered = output or f"Command failed with exit code {result.returncode}.\n"
+                self.after(
+                    0,
+                    lambda text=rendered: self.append_output(
+                        f"$ git {' '.join(command)}\n{text}\n"
+                    )
+                )
+
             if callback:
-                self.after(0, lambda: callback(result))
+                value = result.stdout if result.returncode == 0 else None
+                self.after(0, lambda result=value: callback(result))
+
         threading.Thread(target=worker, daemon=True).start()
+
+    def report_missing_git(self):
+        message = "Git is not installed or is not in PATH."
+        self.append_output(f"⚠ {message}\n")
+        messagebox.showerror("Git Master", message)
 
     # =========================================================
     # Operations
@@ -433,6 +473,219 @@ class GitMaster(ctk.CTkFrame):
             self.append_output("✓ All changes staged.\n")
             # Show status so user can see what was staged
             self.run_git(["status", "--short"])
+
+    def on_stage_option_selected(self, choice):
+        if choice == "Stage Selection":
+            self.stage_selection()
+        else:
+            self.stage_all()
+        self.add_btn.set("Stage All")
+
+    @staticmethod
+    def parse_status_paths(status_output):
+        paths = []
+        records = status_output.split("\0")
+        index = 0
+        while index < len(records):
+            record = records[index]
+            if len(record) >= 4 and record[2] == " ":
+                status = record[:2]
+                path = record[3:]
+                if path:
+                    paths.append(path)
+                if "R" in status and index + 1 < len(records):
+                    paths.append(records[index + 1])
+                index += 2 if "R" in status or "C" in status else 1
+            else:
+                index += 1
+        return sorted(set(paths), key=str.casefold)
+
+    def stage_selection(self):
+        if not self.current_repo:
+            self.append_output("⚠ No repository selected.\n")
+            return
+
+        status = self.run_git(
+            ["status", "--short", "--untracked-files=all", "-z"],
+            show_output=False
+        )
+        if status is None:
+            return
+
+        paths = self.parse_status_paths(status)
+        if not paths:
+            messagebox.showinfo("Git Master", "There are no changed files to stage.")
+            return
+
+        self.show_file_selection_dialog(
+            "Stage Selection",
+            paths,
+            "Stage Selected",
+            self.stage_selected_files,
+            "Select the changed files to include in your next commit."
+        )
+
+    def stage_selected_files(self, paths):
+        pathspecs = [f":(literal){path}" for path in paths]
+        result = self.run_git(["add", "--"] + pathspecs, show_output=True)
+        if result is None:
+            return
+        self.append_output(f"✓ Staged {len(paths)} selected file(s).\n")
+        self.run_git(["status", "--short"])
+
+    def show_file_selection_dialog(self, title, paths, action_text, on_confirm, description):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(title)
+        dialog.geometry("620x580")
+        dialog.minsize(500, 400)
+        dialog.configure(fg_color="#0d0d0d")
+        dialog.transient(self.winfo_toplevel())
+        dialog.grab_set()
+
+        ctk.CTkLabel(
+            dialog,
+            text=title,
+            font=("Consolas", 22, "bold"),
+            text_color="#ffffff",
+            anchor="w"
+        ).pack(fill="x", padx=22, pady=(20, 4))
+        ctk.CTkLabel(
+            dialog,
+            text=description,
+            font=("Consolas", 12),
+            text_color="#888888",
+            anchor="w"
+        ).pack(fill="x", padx=22, pady=(0, 12))
+
+        controls = ctk.CTkFrame(dialog, fg_color="transparent")
+        controls.pack(fill="x", padx=18, pady=(0, 8))
+
+        file_vars = {}
+        count_label = ctk.CTkLabel(
+            controls,
+            text="0 selected",
+            font=("Consolas", 11),
+            text_color="#888888"
+        )
+        count_label.pack(side="left", padx=4)
+
+        file_list = ctk.CTkScrollableFrame(
+            dialog,
+            fg_color="#141414",
+            corner_radius=12,
+            border_width=1,
+            border_color="#292929"
+        )
+        file_list.pack(fill="both", expand=True, padx=18, pady=(0, 12))
+
+        def update_count():
+            count = sum(variable.get() for variable in file_vars.values())
+            count_label.configure(text=f"{count} selected")
+
+        def set_all(value):
+            for variable in file_vars.values():
+                variable.set(value)
+            update_count()
+
+        def select_folder(items):
+            for path, _ in items:
+                file_vars[path].set(True)
+            update_count()
+
+        ctk.CTkButton(
+            controls,
+            text="Select all",
+            width=84,
+            height=28,
+            font=("Consolas", 11),
+            fg_color="#222222",
+            hover_color="#333333",
+            command=lambda: set_all(True)
+        ).pack(side="right", padx=(6, 0))
+        ctk.CTkButton(
+            controls,
+            text="Clear",
+            width=68,
+            height=28,
+            font=("Consolas", 11),
+            fg_color="#222222",
+            hover_color="#333333",
+            command=lambda: set_all(False)
+        ).pack(side="right")
+
+        grouped = {}
+        for path in paths:
+            folder, _, filename = path.rpartition("/")
+            grouped.setdefault(folder or ".", []).append((path, filename or path))
+
+        for folder in sorted(grouped, key=str.casefold):
+            folder_row = ctk.CTkFrame(file_list, fg_color="transparent")
+            folder_row.pack(fill="x", padx=10, pady=(8, 2))
+            ctk.CTkLabel(
+                folder_row,
+                text=f"📁 {folder if folder != '.' else 'Repository root'}",
+                font=("Consolas", 12, "bold"),
+                text_color="#ff6a1a",
+                anchor="w"
+            ).pack(side="left", fill="x", expand=True)
+            ctk.CTkButton(
+                folder_row,
+                text="Select folder",
+                width=100,
+                height=26,
+                font=("Consolas", 10),
+                fg_color="#222222",
+                hover_color="#333333",
+                command=lambda items=grouped[folder]: select_folder(items)
+            ).pack(side="right")
+
+            for path, filename in sorted(grouped[folder], key=lambda item: item[1].casefold()):
+                variable = BooleanVar(master=dialog, value=False)
+                file_vars[path] = variable
+                ctk.CTkCheckBox(
+                    file_list,
+                    text=filename,
+                    variable=variable,
+                    command=update_count,
+                    font=("Consolas", 12),
+                    text_color="#dddddd",
+                    fg_color="#ff5500",
+                    hover_color="#cc4400",
+                    border_color="#555555",
+                    checkmark_color="#ffffff"
+                ).pack(anchor="w", padx=32, pady=4)
+
+        footer = ctk.CTkFrame(dialog, fg_color="transparent")
+        footer.pack(fill="x", padx=18, pady=(0, 18))
+        ctk.CTkButton(
+            footer,
+            text="Cancel",
+            width=90,
+            height=36,
+            font=("Consolas", 12),
+            fg_color="#222222",
+            hover_color="#333333",
+            command=dialog.destroy
+        ).pack(side="right", padx=(8, 0))
+
+        def confirm_selection():
+            selected = [path for path, variable in file_vars.items() if variable.get()]
+            if not selected:
+                messagebox.showinfo(title, "Select at least one file.", parent=dialog)
+                return
+            dialog.destroy()
+            on_confirm(selected)
+
+        ctk.CTkButton(
+            footer,
+            text=action_text,
+            width=140,
+            height=36,
+            font=("Consolas", 12, "bold"),
+            fg_color="#ff5500",
+            hover_color="#cc4400",
+            command=confirm_selection
+        ).pack(side="right")
 
     def commit_with_message(self):
         """Ask for commit message, then git commit -m "..." """
@@ -476,6 +729,84 @@ class GitMaster(ctk.CTkFrame):
             return
         self.append_output(f"Pulling '{self.current_branch}'…\n")
         self.run_git_async(["pull"])
+
+    def on_pull_option_selected(self, choice):
+        if choice == "Pull Selection":
+            self.pull_selection()
+        else:
+            self.pull_current()
+        self.pull_btn.set("Pull All")
+
+    def pull_selection(self):
+        if not self.current_repo:
+            self.append_output("⚠ No repository selected.\n")
+            return
+
+        upstream = self.run_git(
+            ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+            show_output=False,
+            show_errors=False
+        )
+        if upstream is None:
+            self.append_output("⚠ This branch has no configured upstream to pull from.\n")
+            return
+
+        self.append_output(f"Fetching updates for '{upstream.strip()}'…\n")
+        self.run_git_async(["fetch"], callback=self.show_incoming_file_selection)
+
+    def show_incoming_file_selection(self, fetch_result):
+        if fetch_result is None:
+            return
+
+        incoming = self.run_git(
+            ["diff", "--name-only", "-z", "HEAD...@{upstream}"],
+            show_output=False
+        )
+        if incoming is None:
+            return
+
+        paths = [path for path in incoming.split("\0") if path]
+        if not paths:
+            messagebox.showinfo("Git Master", "There are no incoming file changes.")
+            return
+
+        self.show_file_selection_dialog(
+            "Pull Selection",
+            paths,
+            "Apply Selected",
+            self.pull_selected_files,
+            "Choose incoming files to copy into your working tree. Local changes are protected."
+        )
+
+    def pull_selected_files(self, paths):
+        local_changes = self.run_git(
+            ["status", "--porcelain", "--untracked-files=all", "--"]
+            + [f":(literal){path}" for path in paths],
+            show_output=False
+        )
+        if local_changes is None:
+            return
+        if local_changes.strip():
+            self.append_output("⚠ Selected files have local changes; nothing was applied.\n")
+            self.append_output(local_changes)
+            messagebox.showwarning(
+                "Git Master",
+                "Some selected files have local changes. Commit or stash them before applying incoming versions."
+            )
+            return
+
+        result = self.run_git(
+            ["restore", "--source=@{upstream}", "--worktree", "--"]
+            + [f":(literal){path}" for path in paths],
+            show_output=True
+        )
+        if result is None:
+            return
+
+        self.append_output(
+            f"✓ Applied {len(paths)} incoming file(s) to the working tree. Review and commit them when ready.\n"
+        )
+        self.run_git(["status", "--short"])
 
     def show_status(self):
         if not self.current_repo:
