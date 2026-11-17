@@ -69,7 +69,9 @@ class Launcher(ctk.CTk):
             self.main_window = MainWindow(self)
         else:
             self.main_window.deiconify()
+            self.main_window.state("zoomed")
             self.main_window.lift()
+            self.main_window.focus_force()
 
     def show_launcher(self):
         self.deiconify()
@@ -351,7 +353,7 @@ class SidePanel(ctk.CTkFrame):
         ctk.CTkFrame(self, height=1, fg_color="#292929").pack(fill="x", padx=18, pady=(0, 16))
 
         # Navigation buttons
-        buttons = ["Git Master","Clipboard Manager","Quick App Groups","Notification Centre","Dashboard", "Performance", "Watch Dog", "Workflows", "Agents", "Settings"]
+        buttons = ["Dashboard","Git Master","Clipboard Manager","Quick App Groups","Notification Centre","Performance", "Watch Dog", "Workflows", "Agents", "Settings"]
         self.nav_buttons = {}
 
         for item in buttons:
